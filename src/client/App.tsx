@@ -1,3 +1,4 @@
+import { useSnackbar } from "notistack";
 import "./App.css";
 
 import { useEffect, useState } from "react";
@@ -8,9 +9,18 @@ const socket: Socket = io("/");
 function App() {
   const [messages, setMessages] = useState<string[]>([]);
   const [input, setInput] = useState("");
+  const { enqueueSnackbar } = useSnackbar();
 
   useEffect(() => {
-    // Quand le serveur envoie une réponse
+    socket.on("error", (data) => {
+      console.error(data);
+      enqueueSnackbar(data, {
+        variant: "error",
+        autoHideDuration: 5000,
+        preventDuplicate: true,
+      });
+    });
+
     socket.on("reply", (data) => {
       setMessages((prev) => [...prev, "Serveur : " + data.msg]);
     });
@@ -32,6 +42,9 @@ function App() {
   return (
     <div style={{ padding: "2rem", fontFamily: "sans-serif" }}>
       <h1>💬 Chat WebSocket</h1>
+      <button onClick={() => window.location.replace("/login")}>
+        Login to spotify
+      </button>
 
       <div
         style={{
