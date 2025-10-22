@@ -1,9 +1,10 @@
 import { useSnackbar } from "notistack";
 import "./App.css";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import {
+  Alert,
   Button,
   Grid,
   List,
@@ -20,7 +21,12 @@ type Answer = {
   pseudo: string;
   titleFound: boolean;
   artistFound: boolean;
-  message?: string;
+  title?: string;
+  artists?: string;
+  confidence: {
+    title: number;
+    artist: number;
+  };
 };
 
 function App() {
@@ -29,6 +35,9 @@ function App() {
   const { enqueueSnackbar } = useSnackbar();
   const [pseudo, setPseudo] = useState(localStorage.getItem("pseudo") || "");
   const [answer, setAnswer] = useState("");
+  const [hint, setHint] = useState<
+    undefined | { title: string; artists: string }
+  >(undefined);
 
   useEffect(() => {
     socket.on("error", (data) => {
@@ -43,23 +52,38 @@ function App() {
       setConnected(true);
     });
 
+    socket.on("newTrack", () => {
+      setAnswer("");
+      setPreviousAnswers([]);
+      setHint(undefined);
+    });
+
+    socket.on("rightAnswer", (data) => {
+      enqueueSnackbar(data.message, {
+        variant: "success",
+        autoHideDuration: 5000,
+        preventDuplicate: true,
+      });
+    });
+
     socket.on("reply", (data) => {
       console.log(data);
 
       setPreviousAnswers((prev) => [data, ...prev]);
-      if (data.titleFound && data.artistFound) {
-        enqueueSnackbar(data.message, {
-          variant: "success",
-          autoHideDuration: 5000,
-          preventDuplicate: true,
-        });
-      }
+    });
+
+    socket.on("hint", (data) => {
+      console.log("Hint: '", data, "'");
+      setHint(data);
     });
 
     return () => {
       socket.off("reply");
       socket.off("error");
       socket.off("connected");
+      socket.off("newTrack");
+      socket.off("rightAnswer");
+      socket.off("hint");
     };
   }, []);
 
@@ -68,8 +92,9 @@ function App() {
     localStorage.setItem("pseudo", event.target.value);
   };
 
-  const handleNextTrack = () => {
-    socket.emit("nextTrack");
+  const handleNextTrack = (shouldSkip: boolean = true) => {
+    socket.emit("nextTrack", shouldSkip);
+    setHint(undefined);
     setAnswer("");
     setPreviousAnswers([]);
   };
@@ -79,6 +104,28 @@ function App() {
     setAnswer("");
   };
 
+  const handleAnswer = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    setAnswer(event.target.value);
+  };
+
+  const handleKeyPress = (event: React.KeyboardEvent) => {
+    if (event.key === "Enter") {
+      handleSendAnswer();
+    }
+  };
+
+  const { title, artists } = useMemo(() => {
+    if (previousAnswers.length > 0) {
+      return {
+        title: previousAnswers[0].title,
+        artists: previousAnswers[0].artists,
+      };
+    }
+    return { title: undefined, artists: undefined };
+  }, [previousAnswers]);
+
   return (
     <Grid container>
       <Grid size={12}>
@@ -86,31 +133,40 @@ function App() {
       </Grid>
 
       <Grid size={12} container justifyContent="space-between">
-        {connected ? (
-          <Button onClick={handleNextTrack}>Next track</Button>
-        ) : (
-          <Button onClick={() => window.location.replace("/login")}>
-            Login
-          </Button>
-        )}
-        <TextField
-          label="Pseudo"
-          value={pseudo}
-          onChange={handlePseudoChange}
-          variant="filled"
-          size="small"
-        />
+        <Grid size={8}>
+          {connected ? (
+            <>
+              <Button onClick={() => handleNextTrack()}>Next track</Button>
+              <Button onClick={() => handleNextTrack(false)}>
+                Update track
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => window.location.replace("/login")}>
+              Login
+            </Button>
+          )}
+        </Grid>
+
+        <Grid size={4}>
+          <TextField
+            label="Pseudo"
+            value={pseudo}
+            onChange={handlePseudoChange}
+            variant="filled"
+            size="small"
+          />
+        </Grid>
       </Grid>
 
       <Grid size={12} sx={{ marginTop: "1rem" }}>
         <TextField
           value={answer}
-          onChange={(e) => setAnswer(e.target.value)}
+          onChange={handleAnswer}
+          onKeyDown={handleKeyPress}
           label="Reponse"
           variant="filled"
           fullWidth
-          multiline={true}
-          rows={5}
           disabled={!connected}
         />
       </Grid>
@@ -125,14 +181,52 @@ function App() {
           Envoyer la reponse
         </Button>
       </Grid>
+      <Grid size={12} sx={{ marginTop: "1rem" }}>
+        <Button
+          onClick={() => socket.emit("hint")}
+          variant="outlined"
+          fullWidth
+        >
+          Hint
+        </Button>
+      </Grid>
+
+      <Grid size={12} sx={{ marginTop: "1rem" }}>
+        {(title || hint) && (
+          <Alert icon={<MusicNote />} severity={title ? "success" : "warning"}>
+            {title || hint?.title}
+          </Alert>
+        )}
+        {(artists || hint) && (
+          <Alert icon={<Mic />} severity={artists ? "success" : "warning"}>
+            {artists || hint?.artists}
+          </Alert>
+        )}
+      </Grid>
 
       <Grid size={12} sx={{ marginTop: "1rem" }}>
         <List dense={true}>
           {previousAnswers.map((answer, index) => (
-            <ListItem key={index}>
+            <ListItem key={index} onClick={() => setAnswer(answer.answer)}>
               {answer.pseudo}: {answer.answer}{" "}
-              <MusicNote color={answer.titleFound ? "success" : "error"} />
-              <Mic color={answer.artistFound ? "success" : "error"} />
+              <MusicNote
+                color={
+                  answer.titleFound
+                    ? "success"
+                    : answer.confidence.title > 0.5
+                    ? "warning"
+                    : "error"
+                }
+              />
+              <Mic
+                color={
+                  answer.artistFound
+                    ? "success"
+                    : answer.confidence.artist > 0.5
+                    ? "warning"
+                    : "error"
+                }
+              />
             </ListItem>
           ))}
         </List>

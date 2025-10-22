@@ -23,20 +23,7 @@ const io = new SocketIOServer(server, {
   cors: { origin: "*" },
 });
 
-io.on("connection", (socket) => {
-  console.log("Un client connecté", socket.id);
-  if (!spotifyApi.getAccessToken()) {
-    socket.emit("error", "You need to login first");
-    return;
-  } else {
-    socket.emit("connected");
-    play(spotifyApi, socket);
-  }
-
-  socket.on("disconnect", () => {
-    console.log("Client déconnecté:", socket.id);
-  });
-});
+play(spotifyApi, io);
 
 const PORT = getEnvVariable("PORT") || 5174;
 
