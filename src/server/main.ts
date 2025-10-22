@@ -29,25 +29,9 @@ io.on("connection", (socket) => {
     socket.emit("error", "You need to login first");
     return;
   } else {
+    socket.emit("connected");
     play(spotifyApi, socket);
   }
-
-  console.log(spotifyApi.getAccessToken());
-  spotifyApi
-    .getMyCurrentPlaybackState()
-    .then((data) => {
-      console.log(data);
-      socket.emit("ok", data);
-    })
-    .catch((err) => {
-      console.error(err);
-      socket.emit("error", err);
-    });
-
-  socket.on("message", (data) => {
-    console.log("Reçu du client:", data);
-    socket.emit("reply", { msg: "Salut du serveur 👋" });
-  });
 
   socket.on("disconnect", () => {
     console.log("Client déconnecté:", socket.id);

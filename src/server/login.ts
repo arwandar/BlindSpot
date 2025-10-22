@@ -19,7 +19,6 @@ export default (app: Express, spotifyApi: SpotifyWebApi) => {
 
   app.get(redirectURI, async (req, res) => {
     console.log("/callback");
-    console.log(req.query);
     const { code } = req.query;
 
     try {
